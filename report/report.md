@@ -481,29 +481,21 @@ jr t0
 
 **测试截图：**
 
-![image-20261008185905218](C:\Users\Lenovo\AppData\Roaming\Typora\typora-user-images\image-20261008185905218.png)
+![image-20261008185905218](images/image-20261008185905218.png)
 
 > 从图1中OpenSBI启动信息可以看出，QEMU已经成功创建RISC-V virt机器，并加载OpenSBI固件，说明实验环境配置正确。
 
-
-
-![image-20261008183010794](C:\Users\Lenovo\AppData\Roaming\Typora\typora-user-images\image-20261008183010794.png)
+![image-20261008183010794](images/image-20261008183010794.png)
 
 > 图2展示了GDB成功连接QEMU后，CPU停留在复位地址0x1000处。
 
-
-
-![image-20261008183832829](C:\Users\Lenovo\AppData\Roaming\Typora\typora-user-images\image-20261008183832829.png)
+![image-20261008183832829](images/image-20261008183832829.png)
 
 > 图3对应了练习2——观察RISC-V加电后执行的第一批指令。
 
+![image-20261008184158208](images/image-20261008184158208.png)
 
-
-
-
-![image-20261008184158208](C:\Users\Lenovo\AppData\Roaming\Typora\typora-user-images\image-20261008184158208.png)
-
-> 图4同时证明了内核入口地址、ELF布局、链接脚本生效
+> 图4同时证明了内核入口地址、ELF布局、链接脚本生效。
 
 
 ---
