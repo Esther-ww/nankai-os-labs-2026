@@ -34,7 +34,7 @@ static void check_alloc_page(void);
 
 // init_pmm_manager - initialize a pmm_manager instance
 static void init_pmm_manager(void) {
-    pmm_manager = &best_fit_pmm_manager;
+    pmm_manager = &default_pmm_manager;
     cprintf("memory management: %s\n", pmm_manager->name);
     pmm_manager->init();
 }
@@ -61,50 +61,108 @@ size_t nr_free_pages(void) {
     return pmm_manager->nr_free_pages();
 }
 
-// Lab2 function1 2413978
-static void
-page_init(void) {
+//lab2 function1 2413685
+
+
+/* lab2 function1 2413685
+ * Initialize physical page descriptors and free memory.
+ */
+static void page_init(void) {
     extern char end[];
+
+    // 1. 从设备树获取物理内存信息
     uintptr_t mem_base = get_memory_base();
     uintptr_t mem_size = get_memory_size();
-    // terminate initialization if the device-tree memory info is invalid
-    if (mem_base == 0 || mem_size == 0) {
-        panic("page_init: invalid physical memory info from device tree\n");
+
+    if (mem_size == 0 || mem_base != DRAM_BASE ||
+        mem_size > (uintptr_t)-1 - mem_base) {
+        panic("page_init: invalid physical memory");
     }
+
     uintptr_t mem_end = mem_base + mem_size;
 
-    // report the detected physical memory range
-    cprintf("physical memory: base=0x%016lx, size=0x%016lx, end=0x%016lx\n",
-            mem_base, mem_size, mem_end);
+    // 2. 限制在当前内核能够管理的物理地址范围内
+    if (mem_end > PHYSICAL_MEMORY_END) {
+        mem_end = PHYSICAL_MEMORY_END;
+    }
 
-    // set the virtual/physical mapping offset
+    // 物理页必须完整，因此末端向下按页对齐
+    mem_end &= ~((uintptr_t)PGSIZE - 1);
+
+    if (mem_end <= KERNEL_BEGIN_PADDR) {
+        panic("page_init: insufficient physical memory");
+    }
+
+    // 3. 初始化虚拟地址和物理地址的映射偏移
     va_pa_offset = PHYSICAL_MEMORY_OFFSET;
 
-    // total number of physical pages
+    // npage 是物理页号上界，不是 pages 数组长度
     npage = PPN(mem_end);
 
-    // place the page descriptor array right after the kernel image
-    pages = (struct Page *)ROUNDUP((uintptr_t)end, PGSIZE);
+    cprintf("physical memory map:\n");
+    cprintf("  memory: 0x%016lx, [0x%016lx, 0x%016lx].\n",
+            mem_size, mem_base, mem_base + mem_size - 1);
 
-    size_t nr_pages = npage - nbase;
+    // 4. 在内核镜像结束后放置 Page 描述符数组
+    uintptr_t pages_start =
+        ((uintptr_t)end + PGSIZE - 1) &
+        ~((uintptr_t)PGSIZE - 1);
 
-    // mark every page reserved first; the tail region is released below
-    for (size_t i = 0; i < nr_pages; i++) {
-        SetPageReserved(&pages[i]);
+    pages = (struct Page *)pages_start;
+
+    size_t page_count = npage - nbase;
+
+    // 检查描述符数组所需空间
+    if (page_count > ((size_t)-1) / sizeof(struct Page)) {
+        panic("page_init: page descriptor size overflow");
     }
 
-    // physical address just past the page descriptor array
-    uintptr_t freemem = PADDR((uintptr_t)pages) + nr_pages * sizeof(struct Page);
-    freemem = ROUNDUP(freemem, PGSIZE);
+    size_t pages_bytes = page_count * sizeof(struct Page);
 
-    // number of pages reserved for OpenSBI + kernel + page array
-    size_t used = (freemem - mem_base) / PGSIZE;
-
-    // only hand over the remaining pages when at least one full page is free
-    if (used < nr_pages) {
-        init_memmap(&pages[used], nr_pages - used);
+    if (pages_start > (uintptr_t)-1 - pages_bytes) {
+        panic("page_init: descriptor address overflow");
     }
+
+    uintptr_t pages_end = pages_start + pages_bytes;
+
+    if (PADDR(pages_start) >= mem_end ||
+        PADDR(pages_end) > mem_end) {
+        panic("page_init: insufficient space for descriptors");
+    }
+
+    // 5. 初始化全部物理页描述符为保留状态
+    for (size_t i = 0; i < page_count; i++) {
+        struct Page *page = &pages[i];
+
+        page->flags = 0;
+        page->property = 0;
+        set_page_ref(page, 0);
+        SetPageReserved(page);
+        list_init(&(page->page_link));
+    }
+
+    // 6. 描述符数组后方才是可以分配的物理内存
+    uintptr_t free_start = PADDR(pages_end);
+
+    // 空闲区起点向上按页对齐
+    free_start = (free_start + PGSIZE - 1) &
+                 ~((uintptr_t)PGSIZE - 1);
+
+    uintptr_t free_end = mem_end;
+
+    // 7. 只注册完整的空闲物理页
+    if (free_start < free_end) {
+        size_t free_count =
+            (free_end - free_start) / PGSIZE;
+
+        init_memmap(pa2page(free_start), free_count);
+    }
+
+    cprintf("page_init: initialization completed\n");
+    cprintf("page_init: free pages = %lu\n", nr_free_pages());
 }
+
+
 
 /* pmm_init - initialize the physical memory management */
 void pmm_init(void) {
