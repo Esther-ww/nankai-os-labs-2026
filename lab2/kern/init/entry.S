@@ -55,14 +55,28 @@ bootstacktop:
     .align PGSHIFT
     .global boot_page_table_sv39
 # 分配 4KiB 内存给预设的三级页表
+
 boot_page_table_sv39:
-    # 0x00000000_80000000 map to 0x80000000 (1G) 恒等映射，供开分页后 PA->VA 过渡
+    # Lab2: Boot-time Sv39 page table
+
+    # Entry 0 and Entry 1:
+    # No mappings
     .zero 8 * 2
-    .quad (0x80000 << 10) | 0xcf # VRWXAD
-    # 其余(3..510)页表项置 0，V=0 即 unmapped
+
+    # Entry 2:
+    # VA 0x80000000 -> PA 0x80000000
+    # 1 GiB identity mapping
+    .quad (0x80000 << 10) | 0xcf
+
+    # Entry 3 through Entry 510:
+    # Unmapped
     .zero 8 * 508
-    # 0xffffffff_c0000000 map to 0x80000000 (1G)
-    .quad (0x80000 << 10) | 0xcf # VRWXAD
+
+    # Entry 511:
+    # VA 0xffffffffc0000000 -> PA 0x80000000
+    # 1 GiB higher-half kernel mapping
+    .quad (0x80000 << 10) | 0xcf
+
 
     .global boot_hartid
 boot_hartid:
