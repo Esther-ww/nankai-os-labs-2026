@@ -1,5 +1,11 @@
 #include <default_pmm.h>
 #include <best_fit_pmm.h>
+#ifdef USE_BUDDY
+#include <buddy_pmm.h>
+#endif
+#if defined(USE_BUDDY) && defined(USE_FIRST_FIT)
+#error "Select only one physical memory manager"
+#endif
 #include <defs.h>
 #include <error.h>
 #include <memlayout.h>
@@ -34,7 +40,13 @@ static void check_alloc_page(void);
 
 // init_pmm_manager - initialize a pmm_manager instance
 static void init_pmm_manager(void) {
+#ifdef USE_BUDDY
+    pmm_manager = &buddy_pmm_manager;
+#elif defined(USE_FIRST_FIT)
     pmm_manager = &default_pmm_manager;
+#else
+    pmm_manager = &best_fit_pmm_manager;
+#endif
     cprintf("memory management: %s\n", pmm_manager->name);
     pmm_manager->init();
 }
