@@ -1,0 +1,33 @@
+PASS: clang C syntax check with original project headers
+buddy_check: basic checks completed; see SKIP lines if any
+PASS: maximum block, recursive split/merge, basic checks
+PASS: unaligned ranges, gaps, exhaustion and recovery
+PASS: adjacent registrations coalesce
+PASS: adjacent non-buddies do not merge
+PASS: 10000 deterministic randomized operations
+buddy_check: SKIP request 1 (no suitable block)
+buddy_check: SKIP request 2 (no suitable block)
+buddy_check: SKIP request 3 (no suitable block)
+buddy_check: basic checks completed; see SKIP lines if any
+ALL HOST POSITIVE TESTS PASSED
+CASE n
+PASS: invalid operation rejected without mutation (C:\Users\16484\Documents\Codex\2026-10-02\git-1-git-git-https-nankai\outputs\Lab2-C-最新整合版\tests/../code/kern/mm/buddy_pmm.c:32)
+CASE z
+PASS: invalid operation rejected without mutation (C:\Users\16484\Documents\Codex\2026-10-02\git-1-git-git-https-nankai\outputs\Lab2-C-最新整合版\tests/../code/kern/mm/buddy_pmm.c:172)
+CASE w
+PASS: invalid operation rejected without mutation (C:\Users\16484\Documents\Codex\2026-10-02\git-1-git-git-https-nankai\outputs\Lab2-C-最新整合版\tests/../code/kern/mm/buddy_pmm.c:174)
+CASE i
+PASS: invalid operation rejected without mutation (C:\Users\16484\Documents\Codex\2026-10-02\git-1-git-git-https-nankai\outputs\Lab2-C-最新整合版\tests/../code/kern/mm/buddy_pmm.c:173)
+CASE d
+PASS: invalid operation rejected without mutation (C:\Users\16484\Documents\Codex\2026-10-02\git-1-git-git-https-nankai\outputs\Lab2-C-最新整合版\tests/../code/kern/mm/buddy_pmm.c:173)
+CASE r
+PASS: invalid operation rejected without mutation (C:\Users\16484\Documents\Codex\2026-10-02\git-1-git-git-https-nankai\outputs\Lab2-C-最新整合版\tests/../code/kern/mm/buddy_pmm.c:114)
+CASE o
+PASS: invalid operation rejected without mutation (C:\Users\16484\Documents\Codex\2026-10-02\git-1-git-git-https-nankai\outputs\Lab2-C-最新整合版\tests/../code/kern/mm/buddy_pmm.c:111)
+CASE u
+PASS: invalid operation rejected without mutation (C:\Users\16484\Documents\Codex\2026-10-02\git-1-git-git-https-nankai\outputs\Lab2-C-最新整合版\tests/../code/kern/mm/buddy_pmm.c:173)
+CASE a
+PASS: invalid operation rejected without mutation (C:\Users\16484\Documents\Codex\2026-10-02\git-1-git-git-https-nankai\outputs\Lab2-C-最新整合版\tests/../code/kern/mm/buddy_pmm.c:34)
+CASE x
+PASS: invalid operation rejected without mutation (C:\Users\16484\Documents\Codex\2026-10-02\git-1-git-git-https-nankai\outputs\Lab2-C-最新整合版\tests/../code/kern/mm/buddy_pmm.c:36)
+ALL 10 INVALID-OPERATION TESTS PASSED; state hash unchanged before panic
