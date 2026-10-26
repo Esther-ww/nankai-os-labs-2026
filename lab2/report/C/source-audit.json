@@ -1,0 +1,9 @@
+{
+  "upstream_commit": "02154da97e52d6bcd0ea31fc77af9df6385d85d6",
+  "changed_original_files": [
+    "kern/mm/pmm.c"
+  ],
+  "page_init_unchanged": true,
+  "best_fit_unchanged": true,
+  "original_tests_unchanged": true
+}
