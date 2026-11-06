@@ -83,6 +83,105 @@ size_t nr_free_pages(void) {
 
 //lab2 请补充你在lab2中的代码
 
+/* lab2 function1 2413685
+ * Initialize physical page descriptors and free memory.
+ */
+static void page_init(void) {
+    extern char end[];
+
+    // 1. 从设备树获取物理内存信息
+    uintptr_t mem_base = get_memory_base();
+    uintptr_t mem_size = get_memory_size();
+
+    if (mem_size == 0 || mem_base != DRAM_BASE ||
+        mem_size > (uintptr_t)-1 - mem_base) {
+        panic("page_init: invalid physical memory");
+    }
+
+    uintptr_t mem_end = mem_base + mem_size;
+
+    // 2. 限制在当前内核能够管理的物理地址范围内
+    const uintptr_t mapped_end = KERNTOP - PHYSICAL_MEMORY_OFFSET;
+    if (mem_end > mapped_end) {
+        mem_end = mapped_end;
+    }
+
+    // 物理页必须完整，因此末端向下按页对齐
+    mem_end &= ~((uintptr_t)PGSIZE - 1);
+
+    if (mem_end <= (KERNBASE - PHYSICAL_MEMORY_OFFSET)) {
+        panic("page_init: insufficient physical memory");
+    }
+
+    // 3. 初始化虚拟地址和物理地址的映射偏移
+    va_pa_offset = PHYSICAL_MEMORY_OFFSET;
+
+    // npage 是物理页号上界，不是 pages 数组长度
+    npage = PPN(mem_end);
+
+    cprintf("physical memory map:\n");
+    cprintf("  memory: 0x%016lx, [0x%016lx, 0x%016lx].\n",
+            mem_size, mem_base, mem_base + mem_size - 1);
+
+    // 4. 在内核镜像结束后放置 Page 描述符数组
+    uintptr_t pages_start =
+        ((uintptr_t)end + PGSIZE - 1) &
+        ~((uintptr_t)PGSIZE - 1);
+
+    pages = (struct Page *)pages_start;
+
+    size_t page_count = npage - nbase;
+
+    // 检查描述符数组所需空间
+    if (page_count > ((size_t)-1) / sizeof(struct Page)) {
+        panic("page_init: page descriptor size overflow");
+    }
+
+    size_t pages_bytes = page_count * sizeof(struct Page);
+
+    if (pages_start > (uintptr_t)-1 - pages_bytes) {
+        panic("page_init: descriptor address overflow");
+    }
+
+    uintptr_t pages_end = pages_start + pages_bytes;
+
+    if (PADDR(pages_start) >= mem_end ||
+        PADDR(pages_end) > mem_end) {
+        panic("page_init: insufficient space for descriptors");
+    }
+
+    // 5. 初始化全部物理页描述符为保留状态
+    for (size_t i = 0; i < page_count; i++) {
+        struct Page *page = &pages[i];
+
+        page->flags = 0;
+        page->property = 0;
+        set_page_ref(page, 0);
+        SetPageReserved(page);
+        list_init(&(page->page_link));
+    }
+
+    // 6. 描述符数组后方才是可以分配的物理内存
+    uintptr_t free_start = PADDR(pages_end);
+
+    // 空闲区起点向上按页对齐
+    free_start = (free_start + PGSIZE - 1) &
+                 ~((uintptr_t)PGSIZE - 1);
+
+    uintptr_t free_end = mem_end;
+
+    // 7. 只注册完整的空闲物理页
+    if (free_start < free_end) {
+        size_t free_count =
+            (free_end - free_start) / PGSIZE;
+
+        init_memmap(pa2page(free_start), free_count);
+    }
+
+    cprintf("page_init: initialization completed\n");
+    cprintf("page_init: free pages = %lu\n", nr_free_pages());
+}
+
 /* pmm_init - initialize the physical memory management */
 void pmm_init(void) {
     // We need to alloc/free the physical memory (granularity is 4KB or other size).
