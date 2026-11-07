@@ -1,8 +1,0 @@
-Source: main@02154da97e52d6bcd0ea31fc77af9df6385d85d6
-PASS: pmm.c default configuration syntax check, exit 0
-PASS: pmm.c USE_BUDDY configuration syntax check, exit 0
-PASS: page_init body unchanged
-PASS: Best-Fit and framework tests byte-for-byte unchanged
-NOT RUN: RISC-V kernel build and QEMU, WSL E_ACCESSDENIED
-
-UPDATE: user supplied Ubuntu host test screenshot and QEMU screenshot showing buddy_pmm_manager and successful basic checks; compiler command output was not separately captured.
