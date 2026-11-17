@@ -85,7 +85,48 @@ extern struct mm_struct *check_mm_struct;
 
 //lab3 请补充你在lab3中的代码
 
+// interrupt_handler - deal with the interrupts dispatched by trap()
+static void
+interrupt_handler(struct trapframe *tf)
+{
+    // scause sets its highest bit for an interrupt, so clear it before comparing.
+    intptr_t cause = (tf->cause << 1) >> 1;
+    switch (cause)
+    {
+    case IRQ_S_TIMER:
+        // Re-arm the next timer event, then count this tick.
+        clock_set_next_event();
+        if (++ticks % TICK_NUM == 0)
+        {
+            print_ticks();
+        }
+        break;
+    default:
+        print_trapframe(tf);
+        break;
+    }
+}
 
+// exception_handler - deal with the exceptions dispatched by trap()
+static void
+exception_handler(struct trapframe *tf)
+{
+    switch (tf->cause)
+    {
+    case CAUSE_ILLEGAL_INSTRUCTION:
+        cprintf("Illegal instruction caught at 0x%x\n", tf->epc);
+        tf->epc += 4;
+        break;
+    case CAUSE_BREAKPOINT:
+        cprintf("Breakpoint caught at 0x%x\n", tf->epc);
+        tf->epc += 4;
+        break;
+    default:
+        print_trapframe(tf);
+        panic("unknown exception");
+        break;
+    }
+}
 
 /* *
  * trap - handles or dispatches an exception/interrupt. if and when trap()
