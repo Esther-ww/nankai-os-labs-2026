@@ -218,8 +218,178 @@ init_main(void *arg)
     return 0;
 }
 
-//LAB4 function2 YOUR CODE
+//LAB4 function2 2413978
+static struct proc_struct *alloc_proc(void);
+static void copy_thread(struct proc_struct *proc, uintptr_t esp, struct trapframe *tf);
+static int copy_mm(uint32_t clone_flags, struct proc_struct *proc);
 
+// alloc_proc - alloc a proc_struct and init all fields of proc_struct
+static struct proc_struct *
+alloc_proc(void)
+{
+    struct proc_struct *proc = (struct proc_struct *)kmalloc(sizeof(struct proc_struct));
+    if (proc != NULL)
+    {
+        // A blank PCB: unknown state, unassigned pid, no stack/context/trapframe.
+        proc->state = PROC_UNINIT;
+        proc->pid = -1;
+        proc->runs = 0;
+        proc->kstack = 0;
+        proc->need_resched = 0;
+        proc->parent = NULL;
+        proc->mm = NULL;
+        memset(&(proc->context), 0, sizeof(struct context));
+        proc->tf = NULL;
+        // Kernel threads share the kernel address space described by the boot page table.
+        proc->pgdir = boot_pgdir_pa;
+        proc->flags = 0;
+        memset(proc->name, 0, sizeof(proc->name));
+    }
+    return proc;
+}
+
+// proc_init - set up the first kernel thread idleproc "idle" by itself and
+//           - create the second kernel thread init_main
+void proc_init(void)
+{
+    int i;
+
+    list_init(&proc_list);
+    for (i = 0; i < HASH_LIST_SIZE; i++)
+    {
+        list_init(hash_list + i);
+    }
+
+    if ((idleproc = alloc_proc()) == NULL)
+    {
+        panic("cannot alloc idleproc.\n");
+    }
+
+    // idleproc reuses the boot stack and the boot context, so it has no
+    // dedicated kernel stack and no trapframe of its own.
+    idleproc->pid = 0;
+    idleproc->state = PROC_RUNNABLE;
+    idleproc->kstack = (uintptr_t)bootstack;
+    idleproc->need_resched = 1;
+    current = idleproc;
+
+    int pid = kernel_thread(init_main, "Hello world!!", 0);
+    if (pid <= 0)
+    {
+        panic("create init_main failed.\n");
+    }
+
+    initproc = find_proc(pid);
+    set_proc_name(initproc, "init");
+
+    assert(idleproc != NULL && idleproc->pid == 0);
+    assert(initproc != NULL && initproc->pid == 1);
+}
+
+// kernel_thread - create a kernel thread using "fn" function
+// NOTE: the contents of temp trapframe tf will be copied to
+//       proc->tf in do_fork-->copy_thread function
+int kernel_thread(int (*fn)(void *), void *arg, uint32_t clone_flags)
+{
+    struct trapframe tf;
+    memset(&tf, 0, sizeof(struct trapframe));
+
+    // kernel_thread_entry moves s1 into a0 and then jumps to s0.
+    tf.gpr.s0 = (uintptr_t)fn;
+    tf.gpr.s1 = (uintptr_t)arg;
+    // Return to S-mode with interrupts enabled after sret.
+    tf.status = (read_csr(sstatus) | SSTATUS_SPP | SSTATUS_SPIE) & ~SSTATUS_SIE;
+    tf.epc = (uintptr_t)kernel_thread_entry;
+
+    return do_fork(clone_flags | CLONE_VM, 0, &tf);
+}
+
+// do_fork - parent process for a new child process
+//    1. call alloc_proc to allocate a proc_struct
+//    2. call setup_kstack to allocate a kernel stack for child process
+//    3. call copy_mm to dup OR share mm according clone_flag
+//    4. call copy_thread to setup tf & context in proc_struct
+//    5. insert proc_struct into hash_list && proc_list
+//    6. call wakeup_proc to make the new child process RUNNABLE
+//    7. set ret vaule using child proc->pid
+int do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf)
+{
+    int ret = -E_NO_FREE_PROC;
+    struct proc_struct *proc;
+    bool intr_flag;
+
+    if (nr_process >= MAX_PROCESS)
+    {
+        goto fork_out;
+    }
+    ret = -E_NO_MEM;
+
+    if ((proc = alloc_proc()) == NULL)
+    {
+        goto fork_out;
+    }
+    proc->parent = current;
+
+    if (setup_kstack(proc) != 0)
+    {
+        goto bad_fork_cleanup_proc;
+    }
+    if (copy_mm(clone_flags, proc) != 0)
+    {
+        goto bad_fork_cleanup_kstack;
+    }
+    copy_thread(proc, stack, tf);
+
+    // Publish the new child only after all of its resources are ready.
+    local_intr_save(intr_flag);
+    {
+        proc->pid = get_pid();
+        hash_proc(proc);
+        nr_process++;
+        list_add(&proc_list, &(proc->list_link));
+    }
+    local_intr_restore(intr_flag);
+
+    wakeup_proc(proc);
+
+    ret = proc->pid;
+fork_out:
+    return ret;
+
+bad_fork_cleanup_kstack:
+    put_kstack(proc);
+bad_fork_cleanup_proc:
+    kfree(proc);
+    goto fork_out;
+}
+
+// copy_thread - setup the trapframe on the child's kernel stack and the
+//               initial switch context, so the child starts at kernel_thread_entry
+static void
+copy_thread(struct proc_struct *proc, uintptr_t esp, struct trapframe *tf)
+{
+    // The trapframe sits at the top of the child's own kernel stack.
+    proc->tf = (struct trapframe *)(proc->kstack + KSTACKSIZE) - 1;
+    *(proc->tf) = *tf;
+
+    // The child returns 0 from do_fork; a kernel thread keeps running on its kernel stack.
+    proc->tf->gpr.a0 = 0;
+    proc->tf->gpr.sp = (esp == 0) ? (uintptr_t)proc->tf : esp;
+
+    // The first schedule of this child enters forkret -> forkrets -> __trapret.
+    proc->context.ra = (uintptr_t)forkret;
+    proc->context.sp = (uintptr_t)(proc->tf);
+}
+
+// copy_mm - process "mm" copy, currently only kernel threads exist, which
+//           borrow the kernel address space of current
+static int
+copy_mm(uint32_t clone_flags, struct proc_struct *proc)
+{
+    assert(current->mm == NULL);
+    proc->mm = NULL;
+    return 0;
+}
 
 //LAB4 function3 2412000
 
