@@ -56,10 +56,15 @@ bootstacktop:
     .global boot_page_table_sv39
 # 分配 4KiB 内存给预设的三级页表
 boot_page_table_sv39:
-    # 0xffffffff_c0000000 map to 0x80000000 (1G)
-    # 前 511 个页表项均设置为 0 ，因此 V=0 ，意味着是空的(unmapped)
-    .zero 8 * 511
-    # 设置最后一个页表项，PPN=0x80000，标志位 VRWXAD 均为 1
+    # [0..1] 保持为空（V=0，unmapped）
+    .zero 8 * 2
+    # [2] 恒等映射 0x8000_0000 起的 1G。
+    #     csrw satp 之后，取指还停在物理地址 0x8020_0000 这一页上，
+    #     若低地址没有映射，较新的 QEMU 会在这里直接触发页故障。
+    .quad (0x80000 << 10) | 0xcf # VRWXAD
+    # [3..510] 保持为空
+    .zero 8 * 508
+    # [511] 0xffffffff_c0000000 map to 0x80000000 (1G)，内核所在的高地址
     .quad (0x80000 << 10) | 0xcf # VRWXAD
 
     .global boot_hartid

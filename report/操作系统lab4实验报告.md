@@ -699,25 +699,25 @@ make grade
 
 #### 图1：整核编译
 
-![图1\.png](图片和附件/图1.png)
+![图1\.png](images/图1.png)
 
 
 
 #### 图2：页映射替换
 
-![页映射替换](图片和附件/图2.png)
+![页映射替换](images/图2.png)
 
 在教师测试副本中，GDB 停于 `kern/test/test_lab4.c:31`。源码显示虚拟地址 PGSIZE（0x1000）的映射先指向 p2，再替换为 p1。实测 `p1->ref=2`、`p2->ref=0`，页表项地址为 `0xffffffffc0416008`，页表项内容为 `0x201048c1`。`*ptep & 0x14` 为 `0x0`，说明替换后 U/W 权限位均已清除。截图记录第31行断言执行前的状态。
 
 #### 图3：线程创建
 
-![图3\.png](图片和附件/图3.png)
+![图3\.png](images/图3.png)
 
 
 
 #### 图4：首次上下文切换（C）
 
-![首次上下文切换](图片和附件/图4.png)
+![首次上下文切换](images/图4.png)
 
 GDB 停在 `kern/process/switch.S:10` 的第一条保存指令处。实测 idle PID 为 0、init PID 为 1，current PID 已为 1，这是因为 `proc_run` 在调用 `switch_to` 前已更新 current；此时寄存器现场切换尚未完成。
 
@@ -733,19 +733,19 @@ GDB 停在 `kern/process/switch.S:10` 的第一条保存指令处。实测 idle 
 
 #### 图5：调度返回（C）
 
-![调度返回](图片和附件/图5.png)
+![调度返回](images/图5.png)
 
 在注入原教师测试的调试副本中，GDB 停于 `kern/test/test_lab4.c:98`，即 init 主动调用 schedule 八次后的最终断言前。实测 `current->pid=1`、`test_thread1_ran=1`、`test_thread2_ran=1`。两个测试线程均已获得执行机会，随后控制流返回 init，断言条件为真。此截图记录断言执行前的状态，不单独作为完整 make grade 的评分证据。
 
 #### 图6：普通QEMU
 
-![图6\.png](图片和附件/图6.png)
+![图6\.png](images/图6.png)
 
 
 
 #### 图7：教师评分
 
-![图7\.png](图片和附件/图7.png)
+![图7\.png](images/图7.png)
 
 
 

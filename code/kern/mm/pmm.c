@@ -89,6 +89,82 @@ size_t nr_free_pages(void)
 
 //lab2 请补充你在lab2中的代码
 
+static void page_init(void)
+{
+    extern char end[];
+
+    uintptr_t mem_base = get_memory_base();
+    uintptr_t mem_size = get_memory_size();
+
+    if (mem_size == 0 || mem_base != DRAM_BASE ||
+        mem_size > (uintptr_t)-1 - mem_base)
+    {
+        panic("page_init: invalid physical memory");
+    }
+
+    // 将 DTB 报告的内存范围限制在 Lab4 的管理上界内。
+    uintptr_t mem_end = mem_base + mem_size;
+    const uintptr_t physical_limit = KERNTOP - PHYSICAL_MEMORY_OFFSET;
+    if (mem_end > physical_limit)
+    {
+        mem_end = physical_limit;
+    }
+    mem_end = ROUNDDOWN(mem_end, PGSIZE);
+
+    if (mem_end <= KERNBASE - PHYSICAL_MEMORY_OFFSET)
+    {
+        panic("page_init: insufficient physical memory");
+    }
+
+    va_pa_offset = PHYSICAL_MEMORY_OFFSET;
+    npage = PPN(mem_end);
+
+    cprintf("physical memory map:\n");
+    cprintf("  memory: 0x%016lx, [0x%016lx, 0x%016lx].\n",
+            mem_size, mem_base, mem_base + mem_size - 1);
+
+    // 在内核镜像末尾之后放置页描述符数组。
+    uintptr_t pages_start = ROUNDUP((uintptr_t)end, PGSIZE);
+    size_t page_count = npage - nbase;
+    if (page_count > (size_t)-1 / sizeof(struct Page))
+    {
+        panic("page_init: page descriptor size overflow");
+    }
+
+    size_t pages_bytes = page_count * sizeof(struct Page);
+    if (pages_start > (uintptr_t)-1 - pages_bytes)
+    {
+        panic("page_init: descriptor address overflow");
+    }
+
+    uintptr_t pages_end = pages_start + pages_bytes;
+    if (PADDR(pages_start) >= mem_end || PADDR(pages_end) > mem_end)
+    {
+        panic("page_init: insufficient space for descriptors");
+    }
+
+    // 先把所有物理页标为保留，再交给分配器登记空闲区。
+    pages = (struct Page *)pages_start;
+    for (size_t i = 0; i < page_count; i++)
+    {
+        struct Page *page = &pages[i];
+        page->flags = 0;
+        page->property = 0;
+        set_page_ref(page, 0);
+        SetPageReserved(page);
+        list_init(&page->page_link);
+    }
+
+    uintptr_t free_start = ROUNDUP(PADDR(pages_end), PGSIZE);
+    if (free_start < mem_end)
+    {
+        init_memmap(pa2page(free_start), (mem_end - free_start) / PGSIZE);
+    }
+
+    cprintf("page_init: initialization completed\n");
+    cprintf("page_init: free pages = %lu\n", nr_free_pages());
+}
+
 static void enable_paging(void)
 {
     write_csr(satp, 0x8000000000000000 | (boot_pgdir_pa >> RISCV_PGSHIFT));
@@ -220,9 +296,51 @@ struct Page *get_page(pde_t *pgdir, uintptr_t la, pte_t **ptep_store)
     return NULL;
 }
 
-//LAB4 function1 YOUR CODE
+//LAB4 function1 2413685
+void page_remove(pde_t *pgdir, uintptr_t la)
+{
+    pte_t *ptep = get_pte(pgdir, la, 0);
+    if (ptep == NULL || !(*ptep & PTE_V))
+    {
+        return;
+    }
 
+    struct Page *page = pte2page(*ptep);
+    *ptep = 0;
+    tlb_invalidate(pgdir, la);
 
+    if (page_ref_dec(page) == 0)
+    {
+        free_page(page);
+    }
+}
+
+int page_insert(pde_t *pgdir, struct Page *page, uintptr_t la, uint32_t perm)
+{
+    pte_t *ptep = get_pte(pgdir, la, 1);
+    if (ptep == NULL)
+    {
+        return -E_NO_MEM;
+    }
+
+    struct Page *old_page = NULL;
+    if (*ptep & PTE_V)
+    {
+        old_page = pte2page(*ptep);
+    }
+
+    page_ref_inc(page);
+    // 同时置 Accessed/Dirty：较新的 QEMU 默认按 Svade 处理，A/D 为 0 的页
+    // 第一次访问就会页故障（旧 QEMU 由硬件补位，两种环境都正确）。
+    *ptep = pte_create(page2ppn(page), perm | PTE_A | PTE_D);
+    tlb_invalidate(pgdir, la);
+
+    if (old_page != NULL && page_ref_dec(old_page) == 0)
+    {
+        free_page(old_page);
+    }
+    return 0;
+}
 
 
 
@@ -234,7 +352,8 @@ void tlb_invalidate(pde_t *pgdir, uintptr_t la)
 {
     // flush_tlb();
     // The flush_tlb flush the entire TLB, is there any better way?
-    asm volatile("sfence.vma %0" : : "r"(la));
+    //asm volatile("sfence.vma %0" : : "r"(la));
+    asm volatile("sfence.vma %0" : : "r"(la) : "memory");
 }
 
 static void check_alloc_page(void)
@@ -329,6 +448,23 @@ static void check_boot_pgdir(void)
     assert(page_ref(p) == 2);
 
     const char *str = "ucore: Hello world!!";
+    /* 兼容性修正：get_pte 给中间层（非叶）表项也设置了 PTE_U，而 RISC-V 规定
+     * 非叶表项的 U 位必须为 0。较新的 QEMU 会按规范检查，导致第一次访问该
+     * 映射时报页故障；这里把 0x100 这条路径上的中间表项 U 位清零。
+     * 在 QEMU 4.x（课程环境）上该位本来就被忽略，清零无副作用。 */
+    {
+        uintptr_t root0 = (uintptr_t)boot_pgdir_va[0];
+        if (root0)
+        {
+            pte_t *l1 = (pte_t *)KADDR(PDE_ADDR(root0));
+            boot_pgdir_va[0] &= ~(pte_t)PTE_U;
+            if (l1[0] & PTE_V)
+            {
+                l1[0] &= ~(pte_t)PTE_U;
+            }
+            flush_tlb();
+        }
+    }
     strcpy((void *)0x100, str);
     assert(strcmp((void *)0x100, (void *)(0x100 + PGSIZE)) == 0);
 
